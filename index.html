@@ -819,6 +819,266 @@ if(tel){
   }
   draw();
 })();
+
+/* ════════════════════════════════════════════
+   VOICEOVER SYSTEM — Web Speech API
+   Auto-narrates each section on scroll
+════════════════════════════════════════════ */
+(function(){
+  if(!window.speechSynthesis){return;}
+
+  /* ── Scripts per section ── */
+  const scripts = {
+    hero: `Hello! I'm Janakiram Saripalli — a Senior Full Stack Engineer based in Austin, Texas. I specialize in Angular, dot NET, Azure cloud, and building cloud-native enterprise systems. With over 7 years of experience, I've delivered large-scale applications at Verizon, Infosys, and Lexicon Infotech. Welcome to my portfolio.`,
+    metrics: `Here's a quick snapshot of my impact. Over 7 years of enterprise development experience. I reduced deployment cycle time by 40 percent at Verizon. Systems I've built maintain 99.9 percent uptime. And I've personally designed over 15 production RESTful APIs.`,
+    experience: `Let me walk you through my career journey. Currently at Verizon, I architect Angular and dot NET microservices platforms supporting enterprise telecom workflows. Before that, at Infosys, I built reusable component libraries that cut frontend development time by 35 percent. And early in my career at Lexicon Infotech, I built full end-to-end web applications serving hundreds of users.`,
+    skills: `My technical expertise spans the full stack. On the frontend I work with Angular 18, TypeScript, RxJS and NgRx. On the backend I build with dot NET 8, ASP dot NET Core, C sharp, and Entity Framework. In the cloud I'm certified in Microsoft Azure, working with AKS, Docker, and Kubernetes. My architecture experience includes Microservices, CQRS, Domain Driven Design, and Event Driven Systems.`,
+    projects: `Here are some of my featured enterprise projects. At Verizon I built a telecom customer management platform achieving 99.9 percent uptime with zero downtime deployments. I also automated CI/CD pipelines reducing defect rates by 25 percent. At Infosys I delivered a 20-component React library that cut development time by 35 percent. And at Lexicon I built multi-tenant web applications serving over 500 active users.`,
+    certifications: `My credentials include two Microsoft Azure certifications — the Azure Developer Associate, exam AZ-204, and the Database Administrator Associate, exam DP-300. I also hold a Master of Science in Information Technology Management from Indiana Wesleyan University, and a Bachelor of Technology in Computer Science from Bapatla Engineering College.`,
+    contact: `Thank you so much for visiting my portfolio. I am currently open to Senior Full Stack Engineer, Angular Specialist, and Solution Architect roles. I'd love to discuss how I can help your organization build scalable, cloud-native applications. Please reach out via email, LinkedIn, or give me a call. I look forward to connecting with you!`
+  };
+
+  /* ── State ── */
+  let voiceEnabled = false;
+  let speaking = false;
+  let currentSection = null;
+  let spokenSections = new Set();
+  let voices = [];
+  let selectedVoice = null;
+
+  /* ── Load voices (async in some browsers) ── */
+  function loadVoices(){
+    voices = window.speechSynthesis.getVoices();
+    // Prefer a natural English male voice
+    const preferred = ['Google UK English Male','Microsoft David','Alex','Daniel','en-US-GuyNeural'];
+    for(const name of preferred){
+      const v = voices.find(v=>v.name.includes(name.split(' ')[0]) && v.lang.startsWith('en'));
+      if(v){selectedVoice=v;break;}
+    }
+    if(!selectedVoice) selectedVoice = voices.find(v=>v.lang.startsWith('en')) || null;
+  }
+  loadVoices();
+  window.speechSynthesis.onvoiceschanged = loadVoices;
+
+  /* ── Speak function ── */
+  function speak(sectionId){
+    if(!voiceEnabled) return;
+    const text = scripts[sectionId];
+    if(!text || spokenSections.has(sectionId)) return;
+    window.speechSynthesis.cancel();
+    speaking = true;
+    currentSection = sectionId;
+    spokenSections.add(sectionId);
+    const utt = new SpeechSynthesisUtterance(text);
+    if(selectedVoice) utt.voice = selectedVoice;
+    utt.rate = 0.92;
+    utt.pitch = 1.0;
+    utt.volume = 1.0;
+    utt.onstart = ()=>{ updateBar(sectionId,'speaking'); };
+    utt.onend = ()=>{ speaking = false; currentSection = null; updateBar(sectionId,'done'); };
+    utt.onerror = ()=>{ speaking = false; currentSection = null; };
+    window.speechSynthesis.speak(utt);
+  }
+
+  function stopAll(){
+    window.speechSynthesis.cancel();
+    speaking = false;
+    document.querySelectorAll('.vo-bar').forEach(b=>{
+      b.classList.remove('vo-speaking');
+      b.querySelector('.vo-btn-text').textContent='▶ Play';
+    });
+  }
+
+  function replaySection(sectionId){
+    spokenSections.delete(sectionId);
+    window.speechSynthesis.cancel();
+    speaking = false;
+    speak(sectionId);
+  }
+
+  /* ── UI bar per section ── */
+  function updateBar(sectionId, state){
+    const bar = document.querySelector(`.vo-bar[data-section="${sectionId}"]`);
+    if(!bar) return;
+    if(state==='speaking'){
+      bar.classList.add('vo-speaking');
+      bar.querySelector('.vo-btn-text').textContent='⏸ Playing…';
+      bar.querySelector('.vo-waves').style.display='flex';
+    } else if(state==='done'){
+      bar.classList.remove('vo-speaking');
+      bar.querySelector('.vo-btn-text').textContent='↺ Replay';
+      bar.querySelector('.vo-waves').style.display='none';
+    }
+  }
+
+  function createVoiceBar(sectionId, label){
+    const bar = document.createElement('div');
+    bar.className = 'vo-bar';
+    bar.dataset.section = sectionId;
+    bar.innerHTML = `
+      <div class="vo-left">
+        <span class="vo-mic">🎙</span>
+        <span class="vo-label">${label}</span>
+        <div class="vo-waves" style="display:none">
+          <span></span><span></span><span></span><span></span><span></span>
+        </div>
+      </div>
+      <div class="vo-right">
+        <button class="vo-btn" onclick="window._voReplay('${sectionId}')">
+          <span class="vo-btn-text">▶ Play</span>
+        </button>
+      </div>`;
+    return bar;
+  }
+
+  /* ── Inject bars into each section ── */
+  const sectionMeta = [
+    {id:'hero',      label:'Hero Introduction'},
+    {id:'metrics',   label:'Key Metrics'},
+    {id:'experience',label:'Career Journey'},
+    {id:'skills',    label:'Technical Skills'},
+    {id:'projects',  label:'Featured Projects'},
+    {id:'certifications',label:'Certifications'},
+    {id:'contact',   label:'Contact & Hire'},
+  ];
+  sectionMeta.forEach(s=>{
+    const sec = document.getElementById(s.id);
+    if(!sec) return;
+    const bar = createVoiceBar(s.id, s.label);
+    sec.style.position = 'relative';
+    sec.appendChild(bar);
+  });
+
+  /* ── Global replay handler ── */
+  window._voReplay = function(sectionId){
+    if(!voiceEnabled){
+      voiceEnabled = true;
+      updateToggleBtn();
+    }
+    replaySection(sectionId);
+  };
+
+  /* ── Scroll observer triggers narration ── */
+  const scrollObs = new IntersectionObserver(entries=>{
+    entries.forEach(e=>{
+      if(e.isIntersecting && voiceEnabled){
+        const sid = e.target.id;
+        if(scripts[sid] && !spokenSections.has(sid) && !speaking){
+          speak(sid);
+        }
+      }
+    });
+  },{threshold:0.4});
+  sectionMeta.forEach(s=>{
+    const sec = document.getElementById(s.id);
+    if(sec) scrollObs.observe(sec);
+  });
+
+  /* ── Floating master toggle button ── */
+  const toggle = document.createElement('div');
+  toggle.id = 'vo-toggle';
+  toggle.innerHTML = `
+    <button id="vo-toggle-btn" onclick="window._voToggle()" title="Toggle Voice Narration">
+      <span id="vo-toggle-icon">🔇</span>
+      <span id="vo-toggle-text">Enable Voice</span>
+    </button>`;
+  document.body.appendChild(toggle);
+
+  function updateToggleBtn(){
+    document.getElementById('vo-toggle-icon').textContent = voiceEnabled ? '🔊' : '🔇';
+    document.getElementById('vo-toggle-text').textContent = voiceEnabled ? 'Voice On' : 'Enable Voice';
+    document.getElementById('vo-toggle-btn').classList.toggle('vo-active', voiceEnabled);
+  }
+
+  window._voToggle = function(){
+    voiceEnabled = !voiceEnabled;
+    if(!voiceEnabled) stopAll();
+    updateToggleBtn();
+    if(voiceEnabled){
+      // Speak current visible section
+      sectionMeta.forEach(s=>{
+        const sec = document.getElementById(s.id);
+        if(!sec) return;
+        const rect = sec.getBoundingClientRect();
+        if(rect.top < window.innerHeight * 0.7 && rect.bottom > 0 && !spokenSections.has(s.id) && !speaking){
+          speak(s.id);
+        }
+      });
+    }
+  };
+
+  /* ── CSS for voice UI ── */
+  const style = document.createElement('style');
+  style.textContent = `
+    #vo-toggle{
+      position:fixed;bottom:2rem;right:2rem;z-index:999;
+    }
+    #vo-toggle-btn{
+      display:flex;align-items:center;gap:0.5rem;
+      background:rgba(22,31,48,0.95);
+      border:1px solid rgba(255,255,255,0.15);
+      color:#8fa3c8;padding:0.6rem 1.1rem;
+      border-radius:24px;cursor:pointer;font-family:'DM Sans',sans-serif;
+      font-size:0.82rem;font-weight:500;
+      backdrop-filter:blur(16px);
+      transition:all 0.25s;
+      box-shadow:0 4px 24px rgba(0,0,0,0.4);
+    }
+    #vo-toggle-btn:hover{border-color:rgba(79,142,255,0.4);color:#f0f4ff;transform:translateY(-2px)}
+    #vo-toggle-btn.vo-active{
+      background:rgba(79,142,255,0.15);
+      border-color:rgba(79,142,255,0.4);
+      color:#6ea8ff;
+    }
+    .vo-bar{
+      position:absolute;top:1.25rem;right:1.5rem;z-index:50;
+      display:flex;align-items:center;justify-content:space-between;gap:1rem;
+      background:rgba(12,18,32,0.8);
+      border:1px solid rgba(255,255,255,0.1);
+      border-radius:8px;padding:0.45rem 0.75rem;
+      backdrop-filter:blur(12px);
+      font-family:'DM Sans',sans-serif;
+      transition:border-color 0.25s,background 0.25s;
+      min-width:200px;
+    }
+    .vo-bar.vo-speaking{
+      border-color:rgba(79,142,255,0.45);
+      background:rgba(79,142,255,0.1);
+    }
+    .vo-left{display:flex;align-items:center;gap:0.5rem}
+    .vo-mic{font-size:0.85rem}
+    .vo-label{font-size:0.72rem;color:#4a6080;letter-spacing:0.04em}
+    .vo-right{}
+    .vo-btn{
+      background:transparent;border:1px solid rgba(255,255,255,0.12);
+      color:#8fa3c8;padding:0.25rem 0.65rem;border-radius:5px;
+      cursor:pointer;font-family:'DM Sans',sans-serif;font-size:0.72rem;
+      transition:all 0.2s;white-space:nowrap;
+    }
+    .vo-btn:hover{border-color:rgba(79,142,255,0.4);color:#6ea8ff}
+    .vo-speaking .vo-btn{border-color:rgba(79,142,255,0.35);color:#6ea8ff}
+    /* Animated sound waves */
+    .vo-waves{display:flex;align-items:center;gap:2px;height:14px}
+    .vo-waves span{
+      display:inline-block;width:2px;border-radius:1px;
+      background:#4f8eff;
+      animation:vowave 0.8s ease-in-out infinite;
+    }
+    .vo-waves span:nth-child(1){height:4px;animation-delay:0s}
+    .vo-waves span:nth-child(2){height:8px;animation-delay:0.1s}
+    .vo-waves span:nth-child(3){height:12px;animation-delay:0.2s}
+    .vo-waves span:nth-child(4){height:8px;animation-delay:0.3s}
+    .vo-waves span:nth-child(5){height:4px;animation-delay:0.4s}
+    @keyframes vowave{0%,100%{transform:scaleY(0.4)}50%{transform:scaleY(1)}}
+    @media(max-width:960px){
+      .vo-bar{top:0.75rem;right:0.75rem;min-width:160px}
+      .vo-label{display:none}
+      #vo-toggle{bottom:1.25rem;right:1rem}
+    }
+  `;
+  document.head.appendChild(style);
+
+})();
 </script>
 </body>
 </html>
